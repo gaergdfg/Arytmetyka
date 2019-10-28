@@ -4,7 +4,10 @@ type wartosc = Range of (float * float) * (float * float)
 
 (*---------------------------Utility---------------------------*)
 (* sprawdza, czy poczatek lub koniec przedzialu to nan *)
-let is_nan range = not (fst range >= snd range || fst range < snd range)
+let is_nan_range range = not (fst range >= snd range || fst range < snd range)
+
+(*  sprawdza, czy liczba to nan  *)
+let is_nan_number number = not (number = number)
 
 (* wartosc bezwzgledna float'a *)
 let abs (x: float) = 
@@ -13,24 +16,26 @@ let abs (x: float) =
 
 (* min czterech float'ow *)
 let rec min a b c d =
-	if is_nan (a, b) && is_nan (c, d) then nan
-	else if is_nan (c, d) then min a b infinity infinity
-	else if a < b && a < c && a < d then a
-	else min b c d infinity
+	if is_nan_number a && is_nan_number b && is_nan_number c && is_nan_number d then nan
+	else
+		let ignore_nan value = if value = value then value else infinity
+		in if (ignore_nan a) <= (ignore_nan b) && (ignore_nan a) <= (ignore_nan c) && (ignore_nan a) <= (ignore_nan d) then (ignore_nan a)
+		else min (ignore_nan b) (ignore_nan c) (ignore_nan d) infinity
 
 (* max czterech float'ow *)
 let rec max a b c d =
-	if is_nan (a, b) && is_nan (c, d) then nan
-	else if is_nan (c, d) then max a b neg_infinity neg_infinity
-	else if a > b && a > c && a > d then a
-	else max b c d neg_infinity
+	if is_nan_number a && is_nan_number b && is_nan_number c && is_nan_number d then nan
+	else
+		let ignore_nan value = if value = value then value else neg_infinity
+		in if (ignore_nan a) >= (ignore_nan b) && (ignore_nan a) >= (ignore_nan c) && (ignore_nan a) >= (ignore_nan d) then (ignore_nan a)
+		else max (ignore_nan b) (ignore_nan c) (ignore_nan d) neg_infinity
 
 
 (*---------------------------Constructors---------------------------*)
 (* wartosc_dokladnosc x p = x +/- p% *)
 (* war.pocz.: p > 0                  *)
 let wartosc_dokladnosc a p = 
-	let d = a *. (1. -. p)
+	let d = a *. p /. 100.
 	in Range((a -. d, a +. d), (nan, nan))
 
 (* wartosc_od_do x y = [x;y]         *)
@@ -39,6 +44,8 @@ let wartosc_od_do (a: float) (b: float) = Range((a, b), (nan, nan))
 
 (* wartosc_dokladna x = [x;x]        *)
 let wartosc_dokladna (a: float) = Range((a, a), (nan, nan))
+
+let nowy_przedzial a b c d = Range((a, b), (c, d))
 
 
 (*---------------------------Queries---------------------------*)
@@ -59,27 +66,31 @@ let min_wartosc (range: wartosc) =
 (* lub infinity jeśli brak górnego ograniczenia.    		*)
 let max_wartosc (range: wartosc) =
 	let Range(range_left, range_right) = range
-	in if is_nan range_right then snd range_left else snd range_right
+	in if is_nan_range range_right then snd range_left else snd range_right
 
 
 (* środek przedziału od min_wartosc do max_wartosc, *)
 (* lub nan jeśli min i max_wartosc nie są określone.*)
 let sr_wartosc (range: wartosc) =
 	let Range(range_left, range_right) = range
-	in if is_nan range_right then
+	in if is_nan_range range_right then (fst range_left +. snd range_left) /. 2. else nan
+(* let sr_wartosc (range: wartosc) =
+	let Range(range_left, range_right) = range
+	in if is_nan_range range_right then
 		let mid = (fst range_left +. snd range_left) /. 2.
 		in if (abs mid) <> infinity then mid else nan
 	else
-		nan
+		nan *)
 
 
 (*---------------------------Operations---------------------------*)
 (*  {x + y:  x nalezy do a  i y nalezy do b}  *)
+(*  [a, b] + [c, d] = [a + b, c + d]  *)
 let plus (a: wartosc) (b: wartosc) = 
 	let Range(a_left, a_right) = a
 	and Range(b_left, b_right) = b
 	in
-		let (res_left, res_right) = match (is_nan a_right, is_nan b_right) with
+		let (res_left, res_right) = match (is_nan_range a_right, is_nan_range b_right) with
 			(true, true)   ->
 				(fst a_left +. fst b_left, 	snd a_left +. snd b_left),
 				(nan, 						nan) |
@@ -92,15 +103,17 @@ let plus (a: wartosc) (b: wartosc) =
 			(false, false) ->
 				(neg_infinity, 				infinity),
 				(nan, 						nan)
+		(*  laczy (-inf, b] i [c, +inf), jesli c >= b  *)
 		in if fst a_right >= snd a_left then Range((neg_infinity, infinity), (nan, nan)) else Range(res_left, res_right)
 ;;
 
 (*  {x - y:  x nalezy do a  i y nalezy do b}  *)
+(*  [a, b] - [c, d] = [a - d, b - c]  *)
 let minus (a: wartosc) (b: wartosc) =
 	let Range(a_left, a_right) = a
 	and Range(b_left, b_right) = b
 	in
-		let (res_left, res_right) = match (is_nan a_right, is_nan b_right) with
+		let (res_left, res_right) = match (is_nan_range a_right, is_nan_range b_right) with
 			(true, true)   -> 
 				(fst a_left -. snd b_left, 	snd a_left -. fst b_left),
 				(nan, 						nan) |
@@ -113,10 +126,11 @@ let minus (a: wartosc) (b: wartosc) =
 			(false, false) ->
 				(neg_infinity, 				infinity),
 				(nan, 						nan)
+		(*  laczy (-inf, b] i [c, +inf), jesli c >= b  *)
 		in if fst a_right >= snd a_left then Range((neg_infinity, infinity), (nan, nan)) else Range(res_left, res_right)
 ;;
 
-(*  [a,b] * [c,d]  *)
+(*  [a,b] * [c,d] = [min(ac, ad, bc, bd), max(ac, ad, bc, bd)]  *)
 let mult_single_single a b =
 	let (q, w) = a
 	and (e, r) = b
@@ -131,7 +145,7 @@ let mult_single_double a b =
 		and res_right = mult_single_single a b_right
 		in
 			if fst res_left = neg_infinity && fst res_right = neg_infinity then
-				(neg_infinity, max (snd res_left) (snd res_right) neg_infinity neg_infinity), (nan, nan)
+				(neg_infinity, 		max (snd res_left) (snd res_right) neg_infinity neg_infinity), (nan, nan)
 			else if fst res_left = neg_infinity && fst res_right <> neg_infinity then
 				(res_left, res_right)
 			else (res_right, res_left)
@@ -141,7 +155,7 @@ let razy (a: wartosc) (b: wartosc) =
 	let Range(a_left, a_right) = a
 	and Range(b_left, b_right) = b
 	in
-		let (res_left, res_right) = match (is_nan a_right, is_nan b_right) with
+		let (res_left, res_right) = match (is_nan_range a_right, is_nan_range b_right) with
 			(*  [a, b]*[c, d]  *)
 			(true, true)   -> (mult_single_single a_left b_left), (nan, nan) |
 
@@ -161,9 +175,107 @@ let razy (a: wartosc) (b: wartosc) =
 					in
 						(neg_infinity,		max (snd (fst sub_res_left)) (snd (fst sub_res_right)) neg_infinity neg_infinity),
 						(max (fst (snd sub_res_left)) (fst (snd sub_res_right)) infinity infinity,		infinity)
+		(*  laczy (-inf, b] i [c, +inf), jesli c >= b  *)
 		in if fst a_right >= snd a_left then Range((neg_infinity, infinity), (nan, nan)) else Range(res_left, res_right)
 ;;
 
 
-let podzielic (a: wartosc) (b: wartosc) = Range((1., 1.), (nan, nan))
+let sort_ranges a b c =
+	if is_nan_range c then if fst a <= fst b then (a, b, c) else (b, a, c)
+	else
+		if fst a <= fst b && fst a <= fst c then if fst b <= fst c then (a, b, c) else (a, c, b)
+		else if fst b <= fst a && fst b <= fst c then if fst a <= fst c then (b, a, c) else (b, c, a)
+		else if fst a <= fst b then (c, a, b) else (c, b, a)
 ;;
+let merge_ranges a b c = 
+	let (res_left, res_right) = 
+		if fst b <= snd a then (fst a, snd b), (nan, nan)
+		else a, b
+	in
+		if is_nan_range c then (res_left, res_right)
+		else 
+			match is_nan_range res_right with
+				false -> res_left, (fst res_right, max (snd res_right) (snd c) nan nan) |
+				true  -> 
+					if fst c <= snd res_left
+						then (fst res_left, snd c), (nan, nan)
+						else res_left, c
+;;
+let rec sign value = 
+	if value > 0. then 1.
+	else if value = 0. then sign (1. /. value)
+	else (-1.)
+;;
+let safe_div a b = 
+	if a = 0. then
+		if abs b = infinity || b = 0.
+		then (sign b) *. a
+		else a /. b
+	else if abs a = infinity && abs b = infinity then (sign a) *. (sign b) *. infinity
+	else a /. b
+;;
+(*  [q, w] / [e, r], gdzie {e, r} sa tego samego znaku, wynik nigdy nie bedzie rozdzielny  *)
+let div_single_single a b =
+	if b = (0., 0.) then (nan, nan)
+	else
+		let (q, w) = a
+		and (e, r) = b
+		in
+			(* Printf.printf "\tdiv_single_single: (%f, %f) (%f, %f)\n" q w e r; *)
+			(* Printf.printf "%f %f %f %f\n" (safe_div q e) (safe_div q r) (safe_div w e) (safe_div w r); *)
+			(min (safe_div q e) (safe_div q r) (safe_div w e) (safe_div w r),
+			max (safe_div q e) (safe_div q r) (safe_div w e) (safe_div w r))
+;;
+let helper_single_single a b = 
+	let range_one = if sign (fst b) *. sign (snd b) = -1. then div_single_single a (fst b, -0.) else div_single_single a b
+	and range_two = if sign (fst b) *. sign (snd b) = -1. then div_single_single a (0., snd b) else (nan, nan)
+	in
+		(* Printf.printf "\thelper_single_single: (%f, %f) (%f, %f)\n" (fst range_one) (snd range_one) (fst range_two) (snd range_two); *)
+		let (one, two, _) = sort_ranges range_one range_two (nan, nan)
+		in merge_ranges one two (nan, nan)
+;;
+let div_single_double a b = 
+	let (b_left, b_right) = b
+	in
+		let range_one = (neg_infinity, 	min (snd b_left) (-0.) nan nan)
+		and range_two = (max (fst b_right) 0. nan nan, 	infinity)
+		and range_three =
+			if snd b_left > 0. then (0., snd b_left)
+			else if fst b_right < 0. then (fst b_right, (-0.))
+			else (0., 0.)
+		in
+			let res_one = div_single_single a range_one
+			and res_two = div_single_single a range_two
+			and res_three = div_single_single a range_three
+			in
+				let (one, two, three) = sort_ranges res_one res_two res_three
+				in merge_ranges one two three
+;;
+(*  {x / y:  x nalezy do x  i  y nalezy do b}  *)
+let podzielic (a: wartosc) (b: wartosc) =
+	let Range(b_left, b_right) = b
+	in
+		match is_nan_range b_right with
+			true  -> 
+				let ((q, w), (e, r)) = helper_single_single (1., 1.) b_left
+				in razy a (nowy_przedzial q w e r) |
+			false -> 
+				let ((q, w), (e, r)) = div_single_double (1., 1.) (b_left, b_right)
+				in razy a (nowy_przedzial q w e r)
+;;
+
+
+let jeden = wartosc_dokladna 1.0;;
+let zero = wartosc_dokladna 0.0;;
+in_wartosc (razy jeden zero) 0.0;;
+(* - : bool = true *)
+in_wartosc (razy zero (wartosc_od_do 1.0 10.0)) 0.0;;
+(* - : bool = true *)
+in_wartosc (razy zero (wartosc_od_do 0.0 1.0)) 0.0;;
+(* - : bool = true *)
+let duzo = podzielic jeden (wartosc_od_do 0.0 1.0);;
+
+sr_wartosc duzo;;
+(* - : float = infinity *)
+in_wartosc (razy zero duzo) 0.0;;
+(* - : bool = true *)
