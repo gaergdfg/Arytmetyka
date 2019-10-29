@@ -14,7 +14,7 @@ let abs (x: float) =
 	if x > 0. then x
 	else (-. x)
 
-(* min czterech float'ow *)
+(* min czterech float'ow lub nan, gdy wszystkie to nan *)
 let rec min a b c d =
 	if is_nan_number a && is_nan_number b && is_nan_number c && is_nan_number d then nan
 	else
@@ -22,7 +22,7 @@ let rec min a b c d =
 		in if (ignore_nan a) <= (ignore_nan b) && (ignore_nan a) <= (ignore_nan c) && (ignore_nan a) <= (ignore_nan d) then (ignore_nan a)
 		else min (ignore_nan b) (ignore_nan c) (ignore_nan d) infinity
 
-(* max czterech float'ow *)
+(* max czterech float'ow lub nan, gdy wszystkie to nan *)
 let rec max a b c d =
 	if is_nan_number a && is_nan_number b && is_nan_number c && is_nan_number d then nan
 	else
@@ -35,7 +35,7 @@ let rec max a b c d =
 (* wartosc_dokladnosc x p = x +/- p% *)
 (* war.pocz.: p > 0                  *)
 let wartosc_dokladnosc a p = 
-	let d = a *. p /. 100.
+	let d = (abs a) *. (p /. 100.)
 	in Range((a -. d, a +. d), (nan, nan))
 
 (* wartosc_od_do x y = [x;y]         *)
@@ -45,6 +45,7 @@ let wartosc_od_do (a: float) (b: float) = Range((a, b), (nan, nan))
 (* wartosc_dokladna x = [x;x]        *)
 let wartosc_dokladna (a: float) = Range((a, a), (nan, nan))
 
+(*  pomocniczy konstruktor  *)
 let nowy_przedzial a b c d = Range((a, b), (c, d))
 
 
@@ -74,18 +75,12 @@ let max_wartosc (range: wartosc) =
 let sr_wartosc (range: wartosc) =
 	let Range(range_left, range_right) = range
 	in if is_nan_range range_right then (fst range_left +. snd range_left) /. 2. else nan
-(* let sr_wartosc (range: wartosc) =
-	let Range(range_left, range_right) = range
-	in if is_nan_range range_right then
-		let mid = (fst range_left +. snd range_left) /. 2.
-		in if (abs mid) <> infinity then mid else nan
-	else
-		nan *)
 
 
 (*---------------------------Operations---------------------------*)
 (*  {x + y:  x nalezy do a  i y nalezy do b}  *)
 (*  [a, b] + [c, d] = [a + b, c + d]  *)
+(*  zwraca sume dwoch przedzialow wedlug tresci zadania  *)
 let plus (a: wartosc) (b: wartosc) = 
 	let Range(a_left, a_right) = a
 	and Range(b_left, b_right) = b
@@ -104,11 +99,12 @@ let plus (a: wartosc) (b: wartosc) =
 				(neg_infinity, 				infinity),
 				(nan, 						nan)
 		(*  laczy (-inf, b] i [c, +inf), jesli c >= b  *)
-		in if fst a_right >= snd a_left then Range((neg_infinity, infinity), (nan, nan)) else Range(res_left, res_right)
+		in if fst res_right <= snd res_left then Range((neg_infinity, infinity), (nan, nan)) else Range(res_left, res_right)
 ;;
 
 (*  {x - y:  x nalezy do a  i y nalezy do b}  *)
 (*  [a, b] - [c, d] = [a - d, b - c]  *)
+(*  zwraca roznice przedzialow wedlug tresci zadania  *)
 let minus (a: wartosc) (b: wartosc) =
 	let Range(a_left, a_right) = a
 	and Range(b_left, b_right) = b
@@ -118,7 +114,7 @@ let minus (a: wartosc) (b: wartosc) =
 				(fst a_left -. snd b_left, 	snd a_left -. fst b_left),
 				(nan, 						nan) |
 			(true, false)  ->
-				(neg_infinity, 				snd a_left -. fst b_left),
+				(neg_infinity, 				snd a_left -. fst b_right),
 				(fst a_left -. snd b_left, 	infinity) |
 			(false, true)  ->
 				(neg_infinity, 				snd a_left -. fst b_left),
@@ -127,17 +123,25 @@ let minus (a: wartosc) (b: wartosc) =
 				(neg_infinity, 				infinity),
 				(nan, 						nan)
 		(*  laczy (-inf, b] i [c, +inf), jesli c >= b  *)
-		in if fst a_right >= snd a_left then Range((neg_infinity, infinity), (nan, nan)) else Range(res_left, res_right)
+		in 
+			if fst res_right <= snd res_left then Range((neg_infinity, infinity), (nan, nan)) else Range(res_left, res_right)
 ;;
 
 (*  [a,b] * [c,d] = [min(ac, ad, bc, bd), max(ac, ad, bc, bd)]  *)
+(*  zwraca wynik mnozenia dwoch przedzialow, z ktorych zadny nie jest rozlaczny  *)
 let mult_single_single a b =
-	let (q, w) = a
-	and (e, r) = b
-	in (min (q *. e) (q *. r) (w *. e) (w *. r),
-		max (q *. e) (q *. r) (w *. e) (w *. r))
+	if is_nan_range a || is_nan_range b then (nan, nan)
+	else
+		let (q, w) = a
+		and (e, r) = b
+		in 
+			if a = (0., 0.) || b = (0., 0.) then (0., 0.)
+			else
+				(min (q *. e) (q *. r) (w *. e) (w *. r),
+				max (q *. e) (q *. r) (w *. e) (w *. r))
 ;;
 (*  [a, b] * {(-inf, c] u [d, _inf)}  *)
+(*  rozbija mnozenie nierozlacznego przedzialu przez rozlazny przedzial na dwa przypadki mnozenia dwoch nierozlaczych przedzialow i laczy wyniki  *)
 let mult_single_double a b =
 	let (b_left, b_right) = b
 	in
@@ -151,6 +155,7 @@ let mult_single_double a b =
 			else (res_right, res_left)
 ;;
 (*  {x * y:  x nalezy do a  i  y nalezy do b}  *)
+(*  odpowiednio rozbija mnozenie przedzialow na mniejsze przypadki i laczy wyniki  *)
 let razy (a: wartosc) (b: wartosc) =
 	let Range(a_left, a_right) = a
 	and Range(b_left, b_right) = b
@@ -160,10 +165,12 @@ let razy (a: wartosc) (b: wartosc) =
 			(true, true)   -> (mult_single_single a_left b_left), (nan, nan) |
 
 			(*  [a, b] * ((-inf, c] u [d, +inf)) = ([a, b] * (-inf, c]) u ([a, b] * [d, +inf))  *)
-			(true, false)  -> if a_left = (0., 0.) then (0., 0.), (nan, nan) else mult_single_double a_left (b_left, b_right) |
+			(true, false)  -> 
+				if a_left = (0., 0.) then (0., 0.), (nan, nan) else mult_single_double a_left (b_left, b_right) |
 
 			(*  ((-inf, a] u [b, +inf)) * [c, d] = ((-inf, a] * [c, d]) u ([b, +inf) * [c, d])  *)
-			(false, true)  -> if b_left = (0., 0.) then (0., 0.), (nan, nan) else mult_single_double b_left (a_left, a_right) |
+			(false, true)  ->
+				if b_left = (0., 0.) then (0., 0.), (nan, nan) else mult_single_double b_left (a_left, a_right) |
 
 			(*  ((-inf, a] u [b, +inf)) * ((-inf, c] u [d, +inf)) = {(-inf, a] * ((-inf, c] u [d, +inf))} u {[b, +inf) * ((-inf, c] u [d, +inf))}  *)
 			(false, false) ->
@@ -174,19 +181,24 @@ let razy (a: wartosc) (b: wartosc) =
 					and sub_res_right = mult_single_double a_right (b_left, b_right)
 					in
 						(neg_infinity,		max (snd (fst sub_res_left)) (snd (fst sub_res_right)) neg_infinity neg_infinity),
-						(max (fst (snd sub_res_left)) (fst (snd sub_res_right)) infinity infinity,		infinity)
+						(min (fst (snd sub_res_left)) (fst (snd sub_res_right)) infinity infinity,		infinity)
 		(*  laczy (-inf, b] i [c, +inf), jesli c >= b  *)
-		in if fst a_right >= snd a_left then Range((neg_infinity, infinity), (nan, nan)) else Range(res_left, res_right)
+		in
+			if fst res_right <= snd res_left then Range((neg_infinity, infinity), (nan, nan)) else Range(res_left, res_right)
 ;;
 
 
+(*  dla danych trzech nierozdzielnych przedzialow [Ai, Bi] sortuje je po ich najmniejszej wartosci (Ai), zakladamy, ze (nan, nan) jest wiekszy od kazdego przedzialu  *)
 let sort_ranges a b c =
-	if is_nan_range c then if fst a <= fst b then (a, b, c) else (b, a, c)
+	if is_nan_range c then
+		if is_nan_range b then (a, b, c) else
+		if fst a <= fst b then(a, b, c) else (b, a, c)
 	else
 		if fst a <= fst b && fst a <= fst c then if fst b <= fst c then (a, b, c) else (a, c, b)
 		else if fst b <= fst a && fst b <= fst c then if fst a <= fst c then (b, a, c) else (b, c, a)
 		else if fst a <= fst b then (c, a, b) else (c, b, a)
 ;;
+(*  laczy trzy nierozdzielne przedzialy  *)
 let merge_ranges a b c = 
 	let (res_left, res_right) = 
 		if fst b <= snd a then (fst a, snd b), (nan, nan)
@@ -201,11 +213,13 @@ let merge_ranges a b c =
 						then (fst res_left, snd c), (nan, nan)
 						else res_left, c
 ;;
+(*  zwraca znak danej liczby  *)
 let rec sign value = 
 	if value > 0. then 1.
 	else if value = 0. then sign (1. /. value)
 	else (-1.)
 ;;
+(*  zwraca wynik z dzielenia a/b lub (+-0 <=> a = 0 && b = +- infinity) lub (+-infinity <=> a = +-inf && b = +-inf)  *)
 let safe_div a b = 
 	if a = 0. then
 		if abs b = infinity || b = 0.
@@ -215,25 +229,25 @@ let safe_div a b =
 	else a /. b
 ;;
 (*  [q, w] / [e, r], gdzie {e, r} sa tego samego znaku, wynik nigdy nie bedzie rozdzielny  *)
+(*  zwraca wynik dzielenie wedlug tresci zadania dwoch nierozdzielnych przedzialow  *)
 let div_single_single a b =
 	if b = (0., 0.) then (nan, nan)
 	else
 		let (q, w) = a
 		and (e, r) = b
 		in
-			(* Printf.printf "\tdiv_single_single: (%f, %f) (%f, %f)\n" q w e r; *)
-			(* Printf.printf "%f %f %f %f\n" (safe_div q e) (safe_div q r) (safe_div w e) (safe_div w r); *)
 			(min (safe_div q e) (safe_div q r) (safe_div w e) (safe_div w r),
 			max (safe_div q e) (safe_div q r) (safe_div w e) (safe_div w r))
 ;;
+(*  a i b sa przedzialami rozlacznymi, jesli konce b maja inne znaki rozbija b w 0. na dwa przedzialy i zwraca polaczone wyniki dwoch wywolan dzielenia (a / podprzedzial b)  *)
 let helper_single_single a b = 
 	let range_one = if sign (fst b) *. sign (snd b) = -1. then div_single_single a (fst b, -0.) else div_single_single a b
 	and range_two = if sign (fst b) *. sign (snd b) = -1. then div_single_single a (0., snd b) else (nan, nan)
 	in
-		(* Printf.printf "\thelper_single_single: (%f, %f) (%f, %f)\n" (fst range_one) (snd range_one) (fst range_two) (snd range_two); *)
 		let (one, two, _) = sort_ranges range_one range_two (nan, nan)
 		in merge_ranges one two (nan, nan)
 ;;
+(*  a - przedzial nierozlaczny, b - rozlaczny, rozbija przedzial b na trzy nierozlaczne podprzedzialy i zwraca polaczony wynik dzielenia a przez nie  *)
 let div_single_double a b = 
 	let (b_left, b_right) = b
 	in
@@ -252,30 +266,17 @@ let div_single_double a b =
 				in merge_ranges one two three
 ;;
 (*  {x / y:  x nalezy do x  i  y nalezy do b}  *)
+(*  oblicza inv = ([1., 1.] / b) i zwraca (a * inv)  *)
 let podzielic (a: wartosc) (b: wartosc) =
-	let Range(b_left, b_right) = b
+  let Range(b_left, b_right) = b;
 	in
 		match is_nan_range b_right with
 			true  -> 
 				let ((q, w), (e, r)) = helper_single_single (1., 1.) b_left
-				in razy a (nowy_przedzial q w e r) |
+				in 
+					razy a (nowy_przedzial q w e r) |
 			false -> 
 				let ((q, w), (e, r)) = div_single_double (1., 1.) (b_left, b_right)
-				in razy a (nowy_przedzial q w e r)
+				in
+					razy a (nowy_przedzial q w e r)
 ;;
-
-
-let jeden = wartosc_dokladna 1.0;;
-let zero = wartosc_dokladna 0.0;;
-in_wartosc (razy jeden zero) 0.0;;
-(* - : bool = true *)
-in_wartosc (razy zero (wartosc_od_do 1.0 10.0)) 0.0;;
-(* - : bool = true *)
-in_wartosc (razy zero (wartosc_od_do 0.0 1.0)) 0.0;;
-(* - : bool = true *)
-let duzo = podzielic jeden (wartosc_od_do 0.0 1.0);;
-
-sr_wartosc duzo;;
-(* - : float = infinity *)
-in_wartosc (razy zero duzo) 0.0;;
-(* - : bool = true *)
