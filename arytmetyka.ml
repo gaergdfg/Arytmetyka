@@ -265,6 +265,20 @@ let div_single_double a b =
 				let (one, two, three) = sort_ranges res_one res_two res_three
 				in merge_ranges one two three
 ;;
+(*  zapewnia, ze zera nierozdzielnego przedzialu maja dobre znaki  *)
+let correct_zeros_single range = 
+	if fst range < 0. && snd range = 0. then (fst range, (-0.))
+	else if fst range = 0. && snd range > 0. then (0., snd range)
+	else range
+;;
+(*  zapewnia, ze zera rozdzielnego przedzialu maja dobre znaki  *)
+let correct_zeros_double range = 
+	let (range_left, range_right) = range
+	in
+		if snd range_left = 0. then ((fst range_left, (-0.)), range_right)
+		else if fst range_right = 0. then (range_left, (0., snd range_right))
+		else range
+;;
 (*  {x / y:  x nalezy do x  i  y nalezy do b}  *)
 (*  oblicza inv = ([1., 1.] / b) i zwraca (a * inv)  *)
 let podzielic (a: wartosc) (b: wartosc) =
@@ -272,11 +286,11 @@ let podzielic (a: wartosc) (b: wartosc) =
 	in
 		match is_nan_range b_right with
 			true  -> 
-				let ((q, w), (e, r)) = helper_single_single (1., 1.) b_left
+				let ((q, w), (e, r)) = helper_single_single (1., 1.) (correct_zeros_single b_left)
 				in 
 					razy a (nowy_przedzial q w e r) |
 			false -> 
-				let ((q, w), (e, r)) = div_single_double (1., 1.) (b_left, b_right)
+				let ((q, w), (e, r)) = div_single_double (1., 1.) (correct_zeros_double (b_left, b_right))
 				in
 					razy a (nowy_przedzial q w e r)
 ;;
